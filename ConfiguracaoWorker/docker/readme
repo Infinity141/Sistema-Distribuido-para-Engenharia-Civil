@@ -1,6 +1,18 @@
 #Projeto de Teste Docker
 
-Este projeto cria uma igame Python com as bibliotecas necessárias para o projeto
+Este projeto cria uma igame Python com as bibliotecas necessárias para o projeto e ela será compartilhada 
+aos outros computadores
 
 #Como  usar
+  Criar uma pasta chamada Teste_Docker
+  Criar dentro dele um arquivo chamado requirements.txt // Onde serão enseridos quais as bibliotecas queremos utilizar e suas versões
+  Criar dentro dele um arquivo Dockerfile onde serão enseridos os passos que o docker deverá realizar para localizar o arquivo com
+  as bibliotecas e armazena-lás em uma imagem
 
+
+#Como criar o docker
+1. **Construir a Imagem**
+  --Rode dentro da pasta onde está os arquiovos
+  ```
+    docker build -t bibliotecas
+  ```
