@@ -3,7 +3,7 @@ from rq.decorators import job
 import cloudpickle
 
 # Conecta no banco de dados redis
-REDIS_URL = 'redis://:liama@IP_DO_BROKER:6379'
+REDIS_URL = 'redis://:liama@10.10.10.10:6379'
 conn = redis.from_url(REDIS_URL)
 
 # Monta um mapa qual fila usar e qual serializador deve utilizar
