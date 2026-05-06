@@ -31,7 +31,7 @@ def iniciar():
 		conexao_redis = redis.from_url(REDIS_URL)
 		conexao_redis.ping()
 		print("Conexao com o redis estabelecida")
-		worker = Worker(['operacoes'], connection=conexao_redis)
+		worker = Worker(['operacoes'], connection=conexao_redis, serializer=cloudpickle)
 		print("[*] Worker online e pronto para trabalhar..")
 		worker.work()
 	
