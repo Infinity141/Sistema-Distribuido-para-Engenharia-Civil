@@ -3,7 +3,7 @@ import numpy as np
 
 @tarefa_cluster
 def processar_matriz_gigante(n):
-    # Qualquer codigo, qualquer
+    # O codigo com a funcao que voce quer calcular
     data = np.random.rand(n, n)
     return np.linalg.inv(data) # Inversa de uma matriz
 
