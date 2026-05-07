@@ -1,14 +1,12 @@
-from config_cluster import tarefa_cluster
 import numpy as np
+from config_cluster import tarefa_cluster
 
 @tarefa_cluster
-def calcular_determinante(matriz_cliente):
-    # O Worker recebe a matriz 'matriz_cliente' já preenchida
-    import numpy as np
-    return np.linalg.det(matriz_cliente)
+def processar(matriz):
+    return np.sum(matriz)
 
-# Simulando uma matriz que já existe no Master
-minha_matriz_local = np.random.rand(100, 100)
+# O Master carrega o ficheiro do seu próprio disco para enviar
+matriz_do_arquivo = np.load('minha_matriz.npy')
 
-# O RQ empacota a função E os dados da matriz e envia ao Broker
-job = calcular_determinante.delay(minha_matriz_local)
+# Envia os dados carregados pela rede
+job = processar.delay(matriz_do_arquivo)
