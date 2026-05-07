@@ -1,0 +1,2 @@
+adcionar está parte no arquivo worker.py do note11:
+worker = Worker(['calculos_matriz'], connection=conexao, serializer=cloudpickle)
