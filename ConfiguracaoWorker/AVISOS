@@ -1,0 +1,11 @@
+Worker_operacao.service:
+  É um arquivo destinado a inicialização automática do código python worker.py,
+  ele deve ser colocado dentro de /etc/systemd/system, ativado e inicializado após sua criação.
+
+Worker.py:
+  É um código em python que conecta ao banco de dados Redis e ativamente verifica se há alguma função enviada que precise ser executada
+  ela deve ser enserida dentro da pasta onde irá o ambiente virtual: area_processamento.
+
+venv:
+  Ambiente virtual onde serão enseridas as bibliotecas e o python, seu objetivo é colocar elas dentro de um local onde o sistema não possa automaticamente 
+  atualiza-las para versões mais recentes, impedindo que aja erro por incompatibilidade de versões entre os computadores
