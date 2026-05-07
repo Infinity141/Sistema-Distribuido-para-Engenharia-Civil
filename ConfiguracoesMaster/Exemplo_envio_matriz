@@ -5,7 +5,7 @@ import numpy as np
 def calcular_determinante(matriz_cliente):
     # O Worker recebe a matriz 'matriz_cliente' já preenchida
     import numpy as np
-    return np.linalg.det(operacoes)
+    return np.linalg.det(matriz_cliente)
 
 # Simulando uma matriz que já existe no Master
 minha_matriz_local = np.random.rand(100, 100)
