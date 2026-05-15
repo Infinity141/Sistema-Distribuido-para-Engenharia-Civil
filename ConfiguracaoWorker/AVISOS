@@ -8,4 +8,20 @@ Worker.py:
 
 venv:
   Ambiente virtual onde serão enseridas as bibliotecas e o python, seu objetivo é colocar elas dentro de um local onde o sistema não possa automaticamente 
-  atualiza-las para versões mais recentes, impedindo que aja erro por incompatibilidade de versões entre os computadores
+  atualiza-las para versões mais recentes, impedindo que aja erro por incompatibilidade de versões entre os computadores.
+
+limpar_logs.sh
+  Para evitar que os logs ultrapassados se amontoem, criei um sh onde limpará o arquivo Worker.log.
+  Depois de criado execute o comando: chmod +x /root/limpar_logs.sh, para dar permissão de execução ao programa
+
+Crontab  
+  Agora é necessário configurar que o arquivo limpar_logs.sh seja executado a cada 48 horas. Para isso iremos adiciona-lo dentro do cronbab.
+      Abra o crontab: 
+          crontab -e
+      Lá dentro coloque está linha no final:
+          0 0 */2 * * /endereço_do_sh
+  Aqui dizemos que o programa deve ser realizado à 
+      0 0: Meia noite(00:00).
+      */2: A cada 2 dias.
+      * *: Em qualquer mês, e em qualquer dia.
+
