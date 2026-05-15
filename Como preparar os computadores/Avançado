@@ -1,4 +1,28 @@
 Caso queira agilizar algumas coisas você pode:
 
-Instalar o Redis na máquina:
+1. Instalar o Redis na máquina:
+  sudo apt install redis-server
+  sudo systemctl status redis
+
+2. Configurar o IP:
+  Primeiro temos que desativar o NetworkManager, o NetworkManager é um gerenciador de ip's do linux, porém ele tem dois defeitos: primeiro que em questão de hierar
+  quia ele supera o arquivo txt do linux que define o IP, segundo ele é meio bugado, mesmo configurando ele como estático, ele volta para o dhcp depois de desligar
+  o computador. Então fazemos assim:
+    sudo systemctl stop NetworkManager
+    sudo systemctl disable NetworkManager
+    sudo systemctl mask NetworkManager
+
+  Agora descubra qual o nome da sua placa de rede(Pode ser eth0, enp3s0, ou qualquer outra):
+      ip link show
   
+  Vamos enfim definir o IP:
+      sudo nano /etc/network/interfaces
+  Defina o IP colocando este texto embaixo de '# The loopback network interface':
+      auto enp3s0
+      iface sua_placa inet static
+         address 10.10.10.(O número do seu node)
+         netmask 255.255.255.0
+         gateway 10.10.10.1
+         dns-nameservers 8.8.8.8 1.1.1.1
+  Salve e reinecie a rede:
+      sudo systemctl restart networking
