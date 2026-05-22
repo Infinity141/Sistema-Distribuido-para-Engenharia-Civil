@@ -1,0 +1,80 @@
+import redis
+from rq import Queue
+import cloudpickle
+import numpy as np
+import io
+
+# 1. Configuração da Conexão com o Broker Remoto
+REDIS_IP = '192.168.1.100'  # Altere para o IP real do seu Broker
+SENHA = 'sua_senha_aqui'
+REDIS_URL = f'redis://:{SENHA}@{REDIS_IP}:6379'
+
+# Conexão direta com o Redis para podermos usar comandos nativos (como LPOP)
+r_client = redis.from_url(REDIS_URL)
+
+# Conexão da fila do RQ usando o cloudpickle para serializar o código
+fila = Queue('calculos_matriz', connection=r_client, serializer=cloudpickle)
+
+# --- A FUNÇÃO QUE SERÁ ENVIADA PARA OS WORKERS ---
+# Ela calcula e joga o resultado direto em uma lista Redis dedicada
+def processar_e_listar(matriz_a, matriz_b, redis_url, chave_resultado):
+    import numpy as np
+    import redis
+    import io
+    
+    # 1. Executa o cálculo pesado no Worker
+    resultado_array = np.dot(matriz_a, matriz_b)
+    
+    # 2. Serializa o array NumPy em bytes (para não perder precisão e trafegar rápido)
+    buffer = io.BytesIO()
+    np.save(buffer, resultado_array)
+    dados_bytes = buffer.getvalue()
+    
+    # 3. Conecta no Redis a partir do Worker e faz um RPUSH na lista de resultados
+    r = redis.from_url(redis_url)
+    r.rpush(chave_resultado, dados_bytes)
+    
+    return "Enviado para a lista com sucesso"
+
+# --- FLUXO DE DISPARO E RECOLETA NO MASTER ---
+def executar_fluxo_master():
+    NOME_DA_LISTA_RESULTADOS = 'lista_resultados_matriz'
+    
+    # 1. Simulando dados existentes no Master (Matrizes)
+    print("📊 Gerando matrizes no Master...")
+    A = np.random.rand(500, 500)
+    B = np.random.rand(500, 500)
+
+    # 2. Envia o código da função e os dados para o Broker via RQ
+    print("🚀 Enviando código e dados para o cluster de Workers...")
+    job = fila.enqueue(
+        processar_e_listar, 
+        args=(A, B, REDIS_URL, NOME_DA_LISTA_RESULTADOS),
+        job_timeout='1h'
+    )
+    print(f"✅ Job {job.id} entrou na fila de processamento.")
+
+    # 3. Coleta do resultado usando LPOP
+    print("⏳ Monitorando a lista de resultados com LPOP...")
+    while True:
+        # Executa o comando LPOP na lista do Redis
+        dados_brutos = r_client.lpop(NOME_DA_LISTA_RESULTADOS)
+        
+        if dados_brutos:
+            print("\n📥 Array encontrado! Deserializando com LPOP...")
+            # Reconstrói o array original a partir dos bytes retirados do Redis
+            buffer = io.BytesIO(dados_brutos)
+            array_final = np.load(buffer)
+            
+            print(f"🏆 Sucesso! Array recebido via LPOP.")
+            print(f"Formato do Array: {array_final.shape}")
+            print(f"Amostra dos dados:\n{array_final[:3, :3]}")
+            break
+        else:
+            # Se a lista estiver vazia, espera um pouco para não fritar o processador
+            import time
+            print(".", end="", flush=True)
+            time.sleep(1)
+
+if __name__ == "__main__":
+    executar_fluxo_master()
