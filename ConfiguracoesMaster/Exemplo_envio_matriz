@@ -3,7 +3,10 @@ from config_cluster import tarefa_cluster
 
 @tarefa_cluster
 def processar(matriz):
-    return np.sum(matriz)
+    for i range(lenght)
+        
+       
+    return np.sum(lista)
 
 # O Master carrega o ficheiro do seu próprio disco para enviar
 matriz_do_arquivo = np.load('minha_matriz.npy')
