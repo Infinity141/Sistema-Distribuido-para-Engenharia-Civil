@@ -5,8 +5,8 @@ import numpy as np
 import io
 
 # 1. Configuração da Conexão com o Broker Remoto
-REDIS_IP = '192.168.1.100'  # Altere para o IP real do seu Broker
-SENHA = 'sua_senha_aqui'
+REDIS_IP = '10.10.10.10'  # Altere para o IP real do seu Broker
+SENHA = 'liama'
 REDIS_URL = f'redis://:{SENHA}@{REDIS_IP}:6379'
 
 # Conexão direta com o Redis para podermos usar comandos nativos (como LPOP)
