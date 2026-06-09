@@ -39,42 +39,40 @@ def processar_e_listar(matriz_a, matriz_b, redis_url, chave_resultado):
 # --- FLUXO DE DISPARO E RECOLETA NO MASTER ---
 def executar_fluxo_master():
     NOME_DA_LISTA_RESULTADOS = 'lista_resultados_matriz'
+    TOTAL_DE_PEDIDOS = 5
     
-    # 1. Simulando dados existentes no Master (Matrizes)
     print("📊 Gerando matrizes no Master...")
     A = np.random.rand(500, 500)
     B = np.random.rand(500, 500)
 
-    # 2. Envia o código da função e os dados para o Broker via RQ
-    print("🚀 Enviando código e dados para o cluster de Workers...")
-    job = fila.enqueue(
-        processar_e_listar, 
-        args=(A, B, REDIS_URL, NOME_DA_LISTA_RESULTADOS),
-        job_timeout='1h'
-    )
-    print(f"✅ Job {job.id} entrou na fila de processamento.")
+    # CORREÇÃO PONTO 2: Envia 5 pedidos para o Redis usando um loop
+    print(f"🚀 Enviando {TOTAL_DE_PEDIDOS} pedidos para o cluster de Workers...")
+    for i in range(TOTAL_DE_PEDIDOS):
+        job = fila.enqueue(
+            processar_e_listar, 
+            args=(A, B, REDIS_URL, NOME_DA_LISTA_RESULTADOS),
+            job_timeout='1h'
+        )
+        print(f"✅ Job {i+1} ({job.id}) entrou na fila.")
 
-    # 3. Coleta do resultado usando LPOP
-    print("⏳ Monitorando a lista de resultados com LPOP...")
-    while True:
-        # Executa o comando LPOP na lista do Redis
+    # CORREÇÃO PONTO 3: Coleta os 5 resultados vindos da esquerda (LPOP)
+    print(f"⏳ Monitorando a lista para recolher {TOTAL_DE_PEDIDOS} resultados com LPOP...")
+    resultados_coletados = 0
+    
+    while resultados_coletados < TOTAL_DE_PEDIDOS:
         dados_brutos = r_client.lpop(NOME_DA_LISTA_RESULTADOS)
         
         if dados_brutos:
-            print("\n📥 Array encontrado! Deserializando com LPOP...")
-            # Reconstrói o array original a partir dos bytes retirados do Redis
+            resultados_coletados += 1
+            print(f"\n📥 [{resultados_coletados}/{TOTAL_DE_PEDIDOS}] Resultado retirado da esquerda via LPOP!")
+            
             buffer = io.BytesIO(dados_brutos)
             array_final = np.load(buffer)
-            
-            print(f"🏆 Sucesso! Array recebido via LPOP.")
-            print(f"Formato do Array: {array_final.shape}")
-            print(f"Amostra dos dados:\n{array_final[:3, :3]}")
-            break
+            print(f"Formato do Array recebido: {array_final.shape}")
         else:
-            # Se a lista estiver vazia, espera um pouco para não fritar o processador
             import time
             print(".", end="", flush=True)
             time.sleep(1)
-
-if __name__ == "__main__":
+            
+    print("\n🏆 Todos os 5 pedidos foram processados e recolhidos!")if __name__ == "__main__":
     executar_fluxo_master()
