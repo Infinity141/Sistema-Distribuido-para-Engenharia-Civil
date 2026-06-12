@@ -1,5 +1,6 @@
 import redis
 from rq import Queue
+from rq import Retry
 import cloudpickle
 import numpy as np
 import io
@@ -62,6 +63,7 @@ def executar_fluxo_master():
                 processar_e_listar, 
                 args=(p, t_particoes, REDIS_URL, NOME_DA_LISTA_RESULTADOS),
                 job_timeout='3h'
+                retry=Retry(max=3, interval=10)
             )
             particoes_restantes = particoes_restantes - t_particoes
             print(f"✅ Job {contador_jobs} ({job.id}) entrou na fila com {t_particoes} iterações. Restam: {particoes_restantes}")
@@ -71,13 +73,18 @@ def executar_fluxo_master():
                 processar_e_listar, 
                 args=(p, particoes_restantes, REDIS_URL, NOME_DA_LISTA_RESULTADOS),
                 job_timeout='3h'
+                retry=Retry(max=3, interval=10)
             )
             print(f"✅ Job {contador_jobs} ({job.id}) entrou na fila com a sobra de {particoes_restantes} iterações.")
             particoes_restantes = 0
 
     # Coleta de dados dinâmica baseada no número de jobs disparados
+    # --- FLUXO DE RECOLETA NO MASTER COM SALVAMENTO EM CSV ---
     print(f"\n⏳ Monitorando a lista para recolher {contador_jobs} resultados com LPOP...")
     resultados_coletados = 0
+    
+    # Criamos uma lista Python no Master para acumular todos os sub-vetores
+    todos_os_raios = []
     
     while resultados_coletados < contador_jobs:
         dados_brutos = r_client.lpop(NOME_DA_LISTA_RESULTADOS)
@@ -89,11 +96,23 @@ def executar_fluxo_master():
             buffer = io.BytesIO(dados_brutos)
             array_final = np.load(buffer)
             print(f"Formato do Array recebido: {array_final.shape}")
+            
+            # Adiciona o vetor atual (com as 200 posições) à nossa lista global
+            todos_os_raios.extend(array_final)
         else:
             print(".", end="", flush=True)
             time.sleep(1)
-            
-    print("\n🏆 Todos os pedidos foram processados e recolhidos!")
+
+    if todos_os_raios:
+        import os  # Biblioteca nativa para manipular caminhos de arquivos
+        
+        vetor_consolidado = np.array(todos_os_raios)
+        PASTA_DESTINO = "./resultados"
+        os.makedirs(PASTA_DESTINO, exist_ok=True)
+        NOME_DO_CSV = os.path.join(PASTA_DESTINO, "resultados_finais.csv")
+        np.savetxt(NOME_DO_CSV, vetor_consolidado, delimiter=",", fmt="%.6f", header="raio_espectral", comments="")
+        
+        print(f"\n💾🏆 Sucesso! Todos os dados foram salvos em: '{os.path.abspath(NOME_DO_CSV)}'")
 
 if __name__ == "__main__":
     executar_fluxo_master()
