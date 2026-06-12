@@ -1,4 +1,3 @@
-import redis
 from rq import Queue
 from rq import Retry  # Importado corretamente!
 import cloudpickle
