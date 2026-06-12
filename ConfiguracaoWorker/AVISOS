@@ -1,4 +1,4 @@
-Worker_operacao.service:
+iniciar_worker.service:
   É um arquivo destinado a inicialização automática do código python worker.py,
   ele deve ser colocado dentro de /etc/systemd/system, ativado e inicializado após sua criação.
 
