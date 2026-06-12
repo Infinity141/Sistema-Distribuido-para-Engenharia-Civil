@@ -1,5 +1,4 @@
-from rq import Queue
-from rq import Retry  # Importado corretamente!
+import redis
 import cloudpickle
 import numpy as np
 import io
@@ -7,46 +6,32 @@ import time
 import os
 
 # 1. Configuração da Conexão com o Broker Remoto
-REDIS_IP = '10.10.10.10'  # Altere para o IP real do seu Broker
+REDIS_IP = '10.10.10.10'  # Substitua pelo IP real da sua VM Debian (Bridge)
 SENHA = 'liama'
 REDIS_URL = f'redis://:{SENHA}@{REDIS_IP}:6379'
 
-# Conexão direta com o Redis para podermos usar comandos nativos (como LPOP)
+# Conexão direta com o Redis utilizando a biblioteca base
 r_client = redis.from_url(REDIS_URL)
 
-# Conexão da fila do RQ usando o cloudpickle para serializar o código
-fila = Queue('calculos_matriz', connection=r_client, serializer=cloudpickle)
-
-
-# --- A FUNÇÃO QUE SERÁ ENVIADA PARA OS WORKERS ---
-def processar_e_listar(p, particoes, redis_url, chave_resultado):
-    import numpy as np
-    import redis
-    import io
-
+# --- A FUNÇÃO QUE SERÁ SERIALIZADA INTEIRA PARA O REDIS ---
+# Os workers não precisam ter esse código salvo no disco deles!
+def processar_e_listar(p, particoes):
+    import numpy as np  # O import precisa estar aqui dentro para o worker ler
     resultados = []
-
     for i in range(particoes):
         A = np.random.rand(p, p)
         autovalores = np.linalg.eigvals(A)
         raio = np.max(np.abs(autovalores))
         resultados.append(raio)
-    
-    # 2. Serializa o array NumPy em bytes (Uso inteligente da RAM, otimizado)
-    buffer = io.BytesIO()
-    np.save(buffer, resultados)
-    dados_bytes = buffer.getvalue()
-    
-    # 3. Conecta no Redis a partir do Worker e faz um RPUSH na lista de resultados
-    r = redis.from_url(redis_url)
-    r.rpush(chave_resultado, dados_bytes)
-    
-    return "Enviado para a lista com sucesso"
-
+    return resultados
 
 # --- FLUXO DE DISPARO E RECOLETA NO MASTER ---
 def executar_fluxo_master():
+    NOME_FILA_TAREFAS = 'fila_calculos_matriz'
     NOME_DA_LISTA_RESULTADOS = 'lista_resultados_matriz'
+    
+    # Limpa resíduos de execuções anteriores para evitar misturar dados antigos
+    r_client.delete(NOME_FILA_TAREFAS)
     r_client.delete(NOME_DA_LISTA_RESULTADOS)
 
     p = 200
@@ -55,67 +40,61 @@ def executar_fluxo_master():
     t_particoes = 200
     contador_jobs = 0
 
-    print("🚀 Enviando pedidos para o cluster de Workers...")
+    print("🚀 Serializando a LÓGICA da função e enviando para o Redis...")
     
-    # Loop de fatiamento e envio dinâmico
+    # Loop de fatiamento e envio dinâmico do código pela rede
     while particoes_restantes > 0: 
         contador_jobs += 1
+        iteracoes_deste_job = t_particoes if particoes_restantes >= t_particoes else particoes_restantes
+        particoes_restantes -= iteracoes_deste_job
 
-        if particoes_restantes >= t_particoes: 
-            job = fila.enqueue(
-                processar_e_listar, 
-                args=(p, t_particoes, REDIS_URL, NOME_DA_LISTA_RESULTADOS),
-                job_timeout='3h',
-                retry=Retry(max=3, interval=10)
-            )
-            particoes_restantes = particoes_restantes - t_particoes
-            print(f"✅ Job {contador_jobs} ({job.id}) entrou na fila com {t_particoes} iterações. Restam: {particoes_restantes}")
-            
-        else:
-            job = fila.enqueue(
-                processar_e_listar, 
-                args=(p, particoes_restantes, REDIS_URL, NOME_DA_LISTA_RESULTADOS),
-                job_timeout='3h',
-                retry=Retry(max=3, interval=10)
-            )
-            print(f"✅ Job {contador_jobs} ({job.id}) entrou na fila com a sobra de {particoes_restantes} iterações.")
-            particoes_restantes = 0
+        # Criamos um pacote contendo a função inteira em bytes + os argumentos dela
+        dados_tarefa = {
+            'job_id': f'job_{contador_jobs}',
+            'funcao_bytes': cloudpickle.dumps(processar_e_listar),
+            'args': (p, iteracoes_deste_job)
+        }
+        pacote_bytes = cloudpickle.dumps(dados_tarefa)
+        
+        # Envia o bloco de bytes puro para a fila do Redis
+        r_client.rpush(NOME_FILA_TAREFAS, pacote_bytes)
+        print(f"✅ Bloco {contador_jobs} enviado com {iteracoes_deste_job} iterações.")
 
-    # --- FLUXO DE RECOLETA NO MASTER COM SALVAMENTO EM CSV ---
-    print(f"\n⏳ Monitorando a lista para recolher {contador_jobs} resultados com LPOP...")
+    # --- FLUXO DE RECOLETA COM LPOP ---
+    print(f"\n⏳ Monitorando a lista para recolher {contador_jobs} resultados...")
     resultados_coletados = 0
-    
-    # Criamos uma lista Python no Master para acumular todos os sub-vetores na RAM
-    todos_os_raios = []
+    todos_os_raios = []  # Lista global na RAM do Master para acumular os dados
     
     while resultados_coletados < contador_jobs:
         dados_brutos = r_client.lpop(NOME_DA_LISTA_RESULTADOS)
         
         if dados_brutos:
             resultados_coletados += 1
-            print(f"📥 [{resultados_coletados}/{contador_jobs}] Resultado retirado da esquerda via LPOP!")
+            print(f"📥 [{resultados_coletados}/{contador_jobs}] Resultado obtido via LPOP!")
             
+            # Reconstrói o sub-vetor binário enviado pelo Worker
             buffer = io.BytesIO(dados_brutos)
             array_final = np.load(buffer)
             print(f"   Formato do Array recebido: {array_final.shape}")
             
-            # Adiciona o vetor atual à nossa lista global na memória
+            # Insere os valores do sub-vetor para dentro do vetor definitivo na memória
             todos_os_raios.extend(array_final)
         else:
             print(".", end="", flush=True)
-            time.sleep(2000)
+            time.sleep(1)  # Correção: Espera apenas 1 segundo antes de checar o Redis de novo
 
-    # --- EXPORTANDO PARA CSV (Escrita única em bloco) ---
+    # --- EXPORTANDO PARA CSV (Escrita única otimizada) ---
     if todos_os_raios:
         vetor_consolidado = np.array(todos_os_raios)
         PASTA_DESTINO = "./resultados"
         
         os.makedirs(PASTA_DESTINO, exist_ok=True)
         NOME_DO_CSV = os.path.join(PASTA_DESTINO, "resultados_finais.csv")
+        
+        # Salva o array de uma vez no formato CSV com cabeçalho
         np.savetxt(NOME_DO_CSV, vetor_consolidado, delimiter=",", fmt="%.6f", header="raio_espectral", comments="")
         
-        print(f"\n💾🏆 Sucesso! Todos os dados foram salvos em: '{os.path.abspath(NOME_DO_CSV)}'")
-
+        print(f"\n💾🏆 Sucesso! Todos os dados foram consolidados em: '{os.path.abspath(NOME_DO_CSV)}'")
 
 if __name__ == "__main__":
     executar_fluxo_master()
