@@ -1,10 +1,11 @@
 import redis
 from rq import Queue
-from rq import Retry
+from rq import Retry  # Importado corretamente!
 import cloudpickle
 import numpy as np
 import io
 import time
+import os
 
 # 1. Configuração da Conexão com o Broker Remoto
 REDIS_IP = '10.10.10.10'  # Altere para o IP real do seu Broker
@@ -16,6 +17,7 @@ r_client = redis.from_url(REDIS_URL)
 
 # Conexão da fila do RQ usando o cloudpickle para serializar o código
 fila = Queue('calculos_matriz', connection=r_client, serializer=cloudpickle)
+
 
 # --- A FUNÇÃO QUE SERÁ ENVIADA PARA OS WORKERS ---
 def processar_e_listar(p, particoes, redis_url, chave_resultado):
@@ -31,7 +33,7 @@ def processar_e_listar(p, particoes, redis_url, chave_resultado):
         raio = np.max(np.abs(autovalores))
         resultados.append(raio)
     
-    # 2. Serializa o array NumPy em bytes (para não perder precisão e trafegar rápido)
+    # 2. Serializa o array NumPy em bytes (Uso inteligente da RAM, otimizado)
     buffer = io.BytesIO()
     np.save(buffer, resultados)
     dados_bytes = buffer.getvalue()
@@ -41,6 +43,7 @@ def processar_e_listar(p, particoes, redis_url, chave_resultado):
     r.rpush(chave_resultado, dados_bytes)
     
     return "Enviado para a lista com sucesso"
+
 
 # --- FLUXO DE DISPARO E RECOLETA NO MASTER ---
 def executar_fluxo_master():
@@ -62,8 +65,8 @@ def executar_fluxo_master():
             job = fila.enqueue(
                 processar_e_listar, 
                 args=(p, t_particoes, REDIS_URL, NOME_DA_LISTA_RESULTADOS),
-                job_timeout='3h'
-                retry=Retry(max=3, interval=10)
+                job_timeout='3h',
+                retry=Retry(max=3, interval=10)  # Configuração de tolerância a falhas
             )
             particoes_restantes = particoes_restantes - t_particoes
             print(f"✅ Job {contador_jobs} ({job.id}) entrou na fila com {t_particoes} iterações. Restam: {particoes_restantes}")
@@ -72,18 +75,17 @@ def executar_fluxo_master():
             job = fila.enqueue(
                 processar_e_listar, 
                 args=(p, particoes_restantes, REDIS_URL, NOME_DA_LISTA_RESULTADOS),
-                job_timeout='3h'
-                retry=Retry(max=3, interval=10)
+                job_timeout='3h',
+                retry=Retry(max=3, interval=10)  # Configuração de tolerância a falhas
             )
             print(f"✅ Job {contador_jobs} ({job.id}) entrou na fila com a sobra de {particoes_restantes} iterações.")
             particoes_restantes = 0
 
-    # Coleta de dados dinâmica baseada no número de jobs disparados
     # --- FLUXO DE RECOLETA NO MASTER COM SALVAMENTO EM CSV ---
     print(f"\n⏳ Monitorando a lista para recolher {contador_jobs} resultados com LPOP...")
     resultados_coletados = 0
     
-    # Criamos uma lista Python no Master para acumular todos os sub-vetores
+    # Criamos uma lista Python no Master para acumular todos os sub-vetores na RAM
     todos_os_raios = []
     
     while resultados_coletados < contador_jobs:
@@ -91,28 +93,29 @@ def executar_fluxo_master():
         
         if dados_brutos:
             resultados_coletados += 1
-            print(f"\n📥 [{resultados_coletados}/{contador_jobs}] Resultado retirado da esquerda via LPOP!")
+            print(f"📥 [{resultados_coletados}/{contador_jobs}] Resultado retirado da esquerda via LPOP!")
             
             buffer = io.BytesIO(dados_brutos)
             array_final = np.load(buffer)
-            print(f"Formato do Array recebido: {array_final.shape}")
+            print(f"   Formato do Array recebido: {array_final.shape}")
             
-            # Adiciona o vetor atual (com as 200 posições) à nossa lista global
+            # Adiciona o vetor atual à nossa lista global na memória
             todos_os_raios.extend(array_final)
         else:
             print(".", end="", flush=True)
             time.sleep(1)
 
+    # --- EXPORTANDO PARA CSV (Escrita única em bloco) ---
     if todos_os_raios:
-        import os  # Biblioteca nativa para manipular caminhos de arquivos
-        
         vetor_consolidado = np.array(todos_os_raios)
         PASTA_DESTINO = "./resultados"
+        
         os.makedirs(PASTA_DESTINO, exist_ok=True)
         NOME_DO_CSV = os.path.join(PASTA_DESTINO, "resultados_finais.csv")
         np.savetxt(NOME_DO_CSV, vetor_consolidado, delimiter=",", fmt="%.6f", header="raio_espectral", comments="")
         
         print(f"\n💾🏆 Sucesso! Todos os dados foram salvos em: '{os.path.abspath(NOME_DO_CSV)}'")
+
 
 if __name__ == "__main__":
     executar_fluxo_master()
