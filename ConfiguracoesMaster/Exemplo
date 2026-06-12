@@ -17,17 +17,22 @@ fila = Queue('calculos_matriz', connection=r_client, serializer=cloudpickle)
 
 # --- A FUNÇÃO QUE SERÁ ENVIADA PARA OS WORKERS ---
 # Ela calcula e joga o resultado direto em uma lista Redis dedicada
-def processar_e_listar(matriz_a, matriz_b, redis_url, chave_resultado):
+def processar_e_listar(p, particoes , redis_url, chave_resultado):
     import numpy as np
     import redis
     import io
-    
-    # 1. Executa o cálculo pesado no Worker
-    resultado_array = np.dot(matriz_a, matriz_b)
+
+    resultados = []
+
+    for i in range(particoes):
+        A = np.random.rand(p, p)
+        autovalores = np.linalg.eigvals(A)
+        raio = np.max(np.abs(autovalores))
+        resultados.append(raio)
     
     # 2. Serializa o array NumPy em bytes (para não perder precisão e trafegar rápido)
     buffer = io.BytesIO()
-    np.save(buffer, resultado_array)
+    np.save(buffer, resultados)
     dados_bytes = buffer.getvalue()
     
     # 3. Conecta no Redis a partir do Worker e faz um RPUSH na lista de resultados
@@ -40,20 +45,30 @@ def processar_e_listar(matriz_a, matriz_b, redis_url, chave_resultado):
 def executar_fluxo_master():
     NOME_DA_LISTA_RESULTADOS = 'lista_resultados_matriz'
     TOTAL_DE_PEDIDOS = 5
-    
-    print("📊 Gerando matrizes no Master...")
-    A = np.random.rand(500, 500)
-    B = np.random.rand(500, 500)
 
-    # CORREÇÃO PONTO 2: Envia 5 pedidos para o Redis usando um loop
+    p = 200
+    n_iter = 1000
+    particoes = n_iter
+
+    # Envia 5 pedidos para o Redis usando um loop
     print(f"🚀 Enviando {TOTAL_DE_PEDIDOS} pedidos para o cluster de Workers...")
     for i in range(TOTAL_DE_PEDIDOS):
-        job = fila.enqueue(
-            processar_e_listar, 
-            args=(A, B, REDIS_URL, NOME_DA_LISTA_RESULTADOS),
-            job_timeout='1h'
-        )
-        print(f"✅ Job {i+1} ({job.id}) entrou na fila.")
+        if (particoes > 250): 
+            job = fila.enqueue(
+                processar_e_listar, 
+                args=(p, 250, REDIS_URL, NOME_DA_LISTA_RESULTADOS),
+                job_timeout='3h'
+            )
+            particoes = particoes - 250
+            print(f"✅ Job {i+1} ({job.id}) entrou na fila.")
+        else:
+            job = fila.enqueue(
+                processar_e_listar, 
+                args=(p, particoes, REDIS_URL, NOME_DA_LISTA_RESULTADOS),
+                job_timeout='3h'
+            )
+            print(f"✅ Job {i+1} ({job.id}) entrou na fila.")
+            particoes = particoes - 250
 
     # CORREÇÃO PONTO 3: Coleta os 5 resultados vindos da esquerda (LPOP)
     print(f"⏳ Monitorando a lista para recolher {TOTAL_DE_PEDIDOS} resultados com LPOP...")
@@ -74,5 +89,7 @@ def executar_fluxo_master():
             print(".", end="", flush=True)
             time.sleep(1)
             
-    print("\n🏆 Todos os 5 pedidos foram processados e recolhidos!")if __name__ == "__main__":
+    print("\n🏆 Todos os 5 pedidos foram processados e recolhidos!")
+
+if __name__ == "__main__":
     executar_fluxo_master()
