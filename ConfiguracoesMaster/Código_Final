@@ -33,7 +33,7 @@ def processar_e_listar(p, particoes, redis_url, chave_resultado):
     
     # 2. Serializa o array NumPy em bytes (para não perder precisão e trafegar rápido)
     buffer = io.BytesIO()
-    np.save(buffer, np.array(resultados))
+    np.save(buffer, resultados)
     dados_bytes = buffer.getvalue()
     
     # 3. Conecta no Redis a partir do Worker e faz um RPUSH na lista de resultados
