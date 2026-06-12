@@ -104,7 +104,7 @@ def executar_fluxo_master():
             todos_os_raios.extend(array_final)
         else:
             print(".", end="", flush=True)
-            time.sleep(1)
+            time.sleep(2000)
 
     # --- EXPORTANDO PARA CSV (Escrita única em bloco) ---
     if todos_os_raios:
