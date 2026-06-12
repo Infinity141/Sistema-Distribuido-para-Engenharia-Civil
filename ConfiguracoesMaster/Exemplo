@@ -44,42 +44,46 @@ def processar_e_listar(p, particoes , redis_url, chave_resultado):
 # --- FLUXO DE DISPARO E RECOLETA NO MASTER ---
 def executar_fluxo_master():
     NOME_DA_LISTA_RESULTADOS = 'lista_resultados_matriz'
-    TOTAL_DE_PEDIDOS = 5
 
     p = 200
     n_iter = 1000
-    particoes = n_iter
+    particoes_restantes = n_iter
+    t_particoes = 200
+    contador_jobs = 0
 
-    # Envia 5 pedidos para o Redis usando um loop
-    print(f"🚀 Enviando {TOTAL_DE_PEDIDOS} pedidos para o cluster de Workers...")
-    for i in range(TOTAL_DE_PEDIDOS):
-        if (particoes > 250): 
+    print(f"🚀 Enviando pedidos para o cluster de Workers...")
+    
+    while particoes_restantes > 0: 
+        contador_jobs += 1
+
+        if particoes_restantes >= t_particoes: 
             job = fila.enqueue(
                 processar_e_listar, 
-                args=(p, 250, REDIS_URL, NOME_DA_LISTA_RESULTADOS),
+                args=(p, t_particoes, REDIS_URL, NOME_DA_LISTA_RESULTADOS),
                 job_timeout='3h'
             )
-            particoes = particoes - 250
-            print(f"✅ Job {i+1} ({job.id}) entrou na fila.")
+            particoes_restantes = particoes_restantes - t_particoes
+            print(f"✅ Job {contador_jobs} ({job.id}) entrou na fila com {t_particoes} iterações. Restam: {particoes_restantes}")
+            
         else:
             job = fila.enqueue(
                 processar_e_listar, 
-                args=(p, particoes, REDIS_URL, NOME_DA_LISTA_RESULTADOS),
+                args=(p, particoes_restantes, REDIS_URL, NOME_DA_LISTA_RESULTADOS),
                 job_timeout='3h'
             )
-            print(f"✅ Job {i+1} ({job.id}) entrou na fila.")
-            particoes = particoes - 250
+            print(f"✅ Job {contador_jobs} ({job.id}) entrou na fila com a sobra de {particoes_restantes} iterações.")
+            particoes_restantes = 0
 
-    # CORREÇÃO PONTO 3: Coleta os 5 resultados vindos da esquerda (LPOP)
-    print(f"⏳ Monitorando a lista para recolher {TOTAL_DE_PEDIDOS} resultados com LPOP...")
+    # Coleta os 5 resultados vindos da esquerda (LPOP)
+    print(f"⏳ Monitorando a lista para recolher {contador_jobs} resultados com LPOP...")
     resultados_coletados = 0
     
-    while resultados_coletados < TOTAL_DE_PEDIDOS:
+    while resultados_coletados < contador_jobs:
         dados_brutos = r_client.lpop(NOME_DA_LISTA_RESULTADOS)
         
         if dados_brutos:
             resultados_coletados += 1
-            print(f"\n📥 [{resultados_coletados}/{TOTAL_DE_PEDIDOS}] Resultado retirado da esquerda via LPOP!")
+            print(f"\n📥 [{resultados_coletados}/{contador_jobs}] Resultado retirado da esquerda via LPOP!")
             
             buffer = io.BytesIO(dados_brutos)
             array_final = np.load(buffer)
@@ -89,7 +93,7 @@ def executar_fluxo_master():
             print(".", end="", flush=True)
             time.sleep(1)
             
-    print("\n🏆 Todos os 5 pedidos foram processados e recolhidos!")
+    print("\n🏆 Todos os pedidos foram processados e recolhidos!")
 
 if __name__ == "__main__":
     executar_fluxo_master()
