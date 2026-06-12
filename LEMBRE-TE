@@ -1,2 +1,8 @@
-adcionar está parte no arquivo worker.py do note11:
-worker = Worker(['calculos_matriz'], connection=conexao, serializer=cloudpickle)
+1. Inicialização dos Workers do RQ
+
+Lembre-se de que, como você alterou o serializador padrão da fila para o cloudpickle, os seus Workers precisam ser inicializados no terminal informando essa configuração. Caso contrário, eles não conseguirão desserializar a função processar_e_listar.
+
+Inicie seus workers apontando para o Redis e ativando o cloudpickle:
+Bash
+
+rq worker calculos_matriz --url redis://:liama@10.10.10.10:6379 --serializer cloudpickle
