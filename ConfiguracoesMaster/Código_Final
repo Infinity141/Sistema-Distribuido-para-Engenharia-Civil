@@ -3,6 +3,7 @@ from rq import Queue
 import cloudpickle
 import numpy as np
 import io
+import time
 
 # 1. Configuração da Conexão com o Broker Remoto
 REDIS_IP = '10.10.10.10'  # Altere para o IP real do seu Broker
@@ -16,8 +17,7 @@ r_client = redis.from_url(REDIS_URL)
 fila = Queue('calculos_matriz', connection=r_client, serializer=cloudpickle)
 
 # --- A FUNÇÃO QUE SERÁ ENVIADA PARA OS WORKERS ---
-# Ela calcula e joga o resultado direto em uma lista Redis dedicada
-def processar_e_listar(p, particoes , redis_url, chave_resultado):
+def processar_e_listar(p, particoes, redis_url, chave_resultado):
     import numpy as np
     import redis
     import io
@@ -32,7 +32,7 @@ def processar_e_listar(p, particoes , redis_url, chave_resultado):
     
     # 2. Serializa o array NumPy em bytes (para não perder precisão e trafegar rápido)
     buffer = io.BytesIO()
-    np.save(buffer, resultados)
+    np.save(buffer, np.array(resultados))
     dados_bytes = buffer.getvalue()
     
     # 3. Conecta no Redis a partir do Worker e faz um RPUSH na lista de resultados
@@ -51,8 +51,9 @@ def executar_fluxo_master():
     t_particoes = 200
     contador_jobs = 0
 
-    print(f"🚀 Enviando pedidos para o cluster de Workers...")
+    print("🚀 Enviando pedidos para o cluster de Workers...")
     
+    # Loop de fatiamento e envio dinâmico
     while particoes_restantes > 0: 
         contador_jobs += 1
 
@@ -74,8 +75,8 @@ def executar_fluxo_master():
             print(f"✅ Job {contador_jobs} ({job.id}) entrou na fila com a sobra de {particoes_restantes} iterações.")
             particoes_restantes = 0
 
-    # Coleta os 5 resultados vindos da esquerda (LPOP)
-    print(f"⏳ Monitorando a lista para recolher {contador_jobs} resultados com LPOP...")
+    # Coleta de dados dinâmica baseada no número de jobs disparados
+    print(f"\n⏳ Monitorando a lista para recolher {contador_jobs} resultados com LPOP...")
     resultados_coletados = 0
     
     while resultados_coletados < contador_jobs:
@@ -89,7 +90,6 @@ def executar_fluxo_master():
             array_final = np.load(buffer)
             print(f"Formato do Array recebido: {array_final.shape}")
         else:
-            import time
             print(".", end="", flush=True)
             time.sleep(1)
             
