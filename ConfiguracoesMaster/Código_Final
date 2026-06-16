@@ -15,7 +15,6 @@ REDIS_URL = f'redis://:{SENHA}@{REDIS_IP}:6379'
 r_client = redis.from_url(REDIS_URL)
 
 # --- A FUNÇÃO QUE SERÁ SERIALIZADA INTEIRA PARA O REDIS ---
-# Os workers não precisam ter esse código salvo no disco deles!
 def processar_e_listar(p, particoes):
     import numpy as np  # O import precisa estar aqui dentro para o worker ler
     resultados = []
@@ -39,7 +38,7 @@ def executar_fluxo_master():
     n_iter = 10000
     particoes_restantes = n_iter
     t_particoes = 200
-contador_jobs = 0
+    contador_jobs = 0
 
     print("🚀 Serializando a LÓGICA da função e enviando para o Redis...")
     
@@ -71,31 +70,26 @@ contador_jobs = 0
 
         if dados_brutos:
             resultados_coletados += 1
-            print(f"📥 [{resultados_coletados}/{contador_jobs}] Resultado obtido via LPOP!")
+            
+            # Desserializa o pacote completo enviado pelo Worker usando cloudpickle
+            pacote_resposta = cloudpickle.loads(dados_brutos)
+            nome_worker = pacote_resposta['worker_id']
+            id_do_job = pacote_resposta['job_id']
+            resposta_binaria = pacote_resposta['resultado_bytes']
 
-            # Reconstrói o sub-vetor binário enviado pelo Worker
-            buffer = io.BytesIO(dados_brutos)
+            # MODIFICADO: Print agora mostra qual computador enviou e qual Job era!
+            print(f"📥 [{resultados_coletados}/{contador_jobs}] Resultado do {id_do_job} recebido do computador: 🔥 [{nome_worker}] 🔥")
+
+            # Reconstrói o sub-vetor binário correspondente aos cálculos
+            buffer = io.BytesIO(resposta_binaria)
             array_final = np.load(buffer)
             print(f"   Formato do Array recebido: {array_final.shape}")
 
             # Insere os valores do sub-vetor para dentro do vetor definitivo na memória
-             todos_os_raios.extend(array_final)
+            todos_os_raios.extend(array_final)
         else:
             print(".", end="", flush=True)
-            time.sleep(1)  # Correção: Espera apenas 1 segundo antes de checar o Redis de novo
-
-    # --- EXPORTANDO PARA CSV (Escrita única otimizada) ---
-    if todos_os_raios:
-        vetor_consolidado = np.array(todos_os_raios)
-        PASTA_DESTINO = "./resultados"
-
-        os.makedirs(PASTA_DESTINO, exist_ok=True)
-        NOME_DO_CSV = os.path.join(PASTA_DESTINO, "resultados_finais.csv")
-
-        # Salva o array de uma vez no formato CSV com cabeçalho
-        np.savetxt(NOME_DO_CSV, vetor_consolidado, delimiter=",", fmt="%.6f", header="raio_espectral", comments="")
-
-        print(f"\n💾🏆 Sucesso! Todos os dados foram consolidados em: '{os.path.abspath(NOME_DO_CSV)}'")
+            time.sleep(1)  # Espera 1 segundo antes de checar o Redis de novo
 
 if __name__ == "__main__":
     executar_fluxo_master()
