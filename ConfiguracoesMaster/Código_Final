@@ -1,3 +1,4 @@
+#!/root/centro_master/venv/bin/python3
 import redis
 import cloudpickle
 import numpy as np
@@ -27,18 +28,18 @@ def processar_e_listar(p, particoes):
 
 # --- FLUXO DE DISPARO E RECOLETA NO MASTER ---
 def executar_fluxo_master():
-    NOME_FILA_TAREFAS = 'fila_calculos_matriz'
-    NOME_DA_LISTA_RESULTADOS = 'lista_resultados_matriz'
+    NOME_FILA_TAREFAS = 'fila_calculos'
+    NOME_DA_LISTA_RESULTADOS = 'lista_resultados'
     
     # Limpa resíduos de execuções anteriores para evitar misturar dados antigos
     r_client.delete(NOME_FILA_TAREFAS)
     r_client.delete(NOME_DA_LISTA_RESULTADOS)
 
     p = 200
-    n_iter = 1000
+    n_iter = 10000
     particoes_restantes = n_iter
     t_particoes = 200
-    contador_jobs = 0
+contador_jobs = 0
 
     print("🚀 Serializando a LÓGICA da função e enviando para o Redis...")
     
@@ -55,7 +56,7 @@ def executar_fluxo_master():
             'args': (p, iteracoes_deste_job)
         }
         pacote_bytes = cloudpickle.dumps(dados_tarefa)
-        
+
         # Envia o bloco de bytes puro para a fila do Redis
         r_client.rpush(NOME_FILA_TAREFAS, pacote_bytes)
         print(f"✅ Bloco {contador_jobs} enviado com {iteracoes_deste_job} iterações.")
@@ -67,18 +68,18 @@ def executar_fluxo_master():
     
     while resultados_coletados < contador_jobs:
         dados_brutos = r_client.lpop(NOME_DA_LISTA_RESULTADOS)
-        
+
         if dados_brutos:
             resultados_coletados += 1
             print(f"📥 [{resultados_coletados}/{contador_jobs}] Resultado obtido via LPOP!")
-            
+
             # Reconstrói o sub-vetor binário enviado pelo Worker
             buffer = io.BytesIO(dados_brutos)
             array_final = np.load(buffer)
             print(f"   Formato do Array recebido: {array_final.shape}")
-            
+
             # Insere os valores do sub-vetor para dentro do vetor definitivo na memória
-            todos_os_raios.extend(array_final)
+ todos_os_raios.extend(array_final)
         else:
             print(".", end="", flush=True)
             time.sleep(1)  # Correção: Espera apenas 1 segundo antes de checar o Redis de novo
@@ -87,13 +88,13 @@ def executar_fluxo_master():
     if todos_os_raios:
         vetor_consolidado = np.array(todos_os_raios)
         PASTA_DESTINO = "./resultados"
-        
+
         os.makedirs(PASTA_DESTINO, exist_ok=True)
         NOME_DO_CSV = os.path.join(PASTA_DESTINO, "resultados_finais.csv")
-        
+
         # Salva o array de uma vez no formato CSV com cabeçalho
         np.savetxt(NOME_DO_CSV, vetor_consolidado, delimiter=",", fmt="%.6f", header="raio_espectral", comments="")
-        
+
         print(f"\n💾🏆 Sucesso! Todos os dados foram consolidados em: '{os.path.abspath(NOME_DO_CSV)}'")
 
 if __name__ == "__main__":
