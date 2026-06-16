@@ -31,9 +31,9 @@ except Exception as e:
     logging.error(msg_erro)
     exit(1)
 
-NOME_FILA_TAREFAS = 'fila_calculos_matriz'
-NOME_LISTA_SINAL_TRABALHO = 'fila_calculos_matriz_processando'
-NOME_DA_LISTA_RESULTADOS = 'lista_resultados_matriz'
+NOME_FILA_TAREFAS = 'fila_calculos'
+NOME_LISTA_SINAL_TRABALHO = 'fila_calculos_processando'
+NOME_DA_LISTA_RESULTADOS = 'lista_resultados'
 
 # 2. LOOP PERPÉTUO DE PROCESSAMENTO
 while True:
@@ -54,16 +54,28 @@ pacote_bytes = r.rpoplpush(NOME_FILA_TAREFAS, NOME_LISTA_SINAL_TRABALHO)
             p, particoes = tarefa['args']
 
             # Executa a lógica matemática dinamicamente
+            # --- DENTRO DO LOOP DO WORKER, LOGO APÓS EXECUTAR A FUNÇÃO ---
             lista_resultados = funcao_dinamica(p, particoes)
-
-            # Transforma a resposta em bytes para tráfego rápido no Redis
+            
+            # Transforma a resposta matemática em bytes normais
             buffer = io.BytesIO()
             np.save(buffer, np.array(lista_resultados))
             dados_bytes = buffer.getvalue()
-
-            # Devolve o resultado final para o Master
-            r.rpush(NOME_DA_LISTA_RESULTADOS, dados_bytes)
-
+            
+            # NOVA PARTE: Pega o nome real do computador na rede local
+            import socket
+            nome_desta_maquina = socket.gethostname()
+            
+            # Monta um dicionário estruturado para enviar ao Master
+            pacote_retorno = {
+                'worker_id': nome_desta_maquina,
+                'job_id': job_id,
+                'resultado_bytes': dados_bytes
+            }
+            pacote_retorno_bytes = cloudpickle.dumps(pacote_retorno)
+            
+            # Envia o pacote completo para o Master
+            r.rpush(NOME_DA_LISTA_RESULTADOS, pacote_retorno_bytes)
             # Remove o job da lista de backup, pois ele terminou com sucesso
             r.lrem(NOME_LISTA_SINAL_TRABALHO, 1, pacote_bytes)
             print(f"✅ [{job_id}] Concluído.")
