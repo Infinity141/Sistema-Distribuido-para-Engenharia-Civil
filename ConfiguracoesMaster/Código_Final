@@ -79,7 +79,7 @@ contador_jobs = 0
             print(f"   Formato do Array recebido: {array_final.shape}")
 
             # Insere os valores do sub-vetor para dentro do vetor definitivo na memória
- todos_os_raios.extend(array_final)
+             todos_os_raios.extend(array_final)
         else:
             print(".", end="", flush=True)
             time.sleep(1)  # Correção: Espera apenas 1 segundo antes de checar o Redis de novo
